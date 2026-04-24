@@ -47,7 +47,16 @@ function uuid(): string {
   });
 }
 
-/** Add a scan to the offline queue */
+/** Check if a barcode was already scanned on the same route */
+export async function isDuplicateScan(barcode: string, routeId: string): Promise<boolean> {
+  const existing = await getDB().getFirstAsync<{ localId: string }>(
+    'SELECT localId FROM scans WHERE barcode = ? AND routeId = ? LIMIT 1',
+    [barcode, routeId]
+  );
+  return !!existing;
+}
+
+/** Add a scan to the offline queue. Returns localId on success, or 'duplicate' if already scanned. */
 export async function addScan(scan: {
   barcode: string;
   scanType: ScanType;
@@ -55,6 +64,11 @@ export async function addScan(scan: {
   routeId: string;
   clientId?: string | null;
 }): Promise<string> {
+  // Duplicate check: same barcode + same route
+  if (await isDuplicateScan(scan.barcode, scan.routeId)) {
+    return 'duplicate';
+  }
+
   const localId = uuid();
   const scannedAt = new Date().toISOString();
 

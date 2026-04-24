@@ -112,16 +112,25 @@ export default function ScannerScreen({ operationId, routeId }: Props) {
     setShowClientPicker(false);
 
     try {
-      await addScan({
+      const result = await addScan({
         barcode: pendingBarcode,
         scanType: pendingScanType,
         operationId,
         routeId,
         clientId,
       });
-      setLastScanned(pendingBarcode);
-      setScanCount((c) => c + 1);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      if (result === 'duplicate') {
+        Vibration.vibrate([0, 100, 50, 100]);
+        Alert.alert(
+          'Duplicado',
+          `El codigo "${pendingBarcode}" ya fue escaneado en esta ruta.`
+        );
+      } else {
+        setLastScanned(pendingBarcode);
+        setScanCount((c) => c + 1);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
     } catch {
       Alert.alert('Error', 'No se pudo guardar el escaneo.');
     }

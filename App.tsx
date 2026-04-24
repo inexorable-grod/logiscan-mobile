@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, StatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { initDB } from './src/services/offlineQueue';
 import { clearToken, registerDeviceToken } from './src/services/api';
 import { User } from './src/types';
@@ -10,15 +10,21 @@ import LoginScreen from './src/screens/LoginScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import HomeNavigator from './src/navigation/HomeNavigator';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Only set up push notifications outside of Expo Go
+const isExpoGo = Constants.appOwnership === 'expo';
+
+if (!isExpoGo) {
+  const Notifications = require('expo-notifications');
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 type AppState = 'loading' | 'login' | 'force_password' | 'home';
 
@@ -34,7 +40,9 @@ export default function App() {
   }, []);
 
   const registerPushToken = async () => {
+    if (isExpoGo) return; // Push notifications not supported in Expo Go
     try {
+      const Notifications = require('expo-notifications');
       const { status } = await Notifications.requestPermissionsAsync();
       if (status !== 'granted') return;
       const tokenData = await Notifications.getExpoPushTokenAsync();
