@@ -124,7 +124,7 @@ export default function ScannerScreen({ operationId, routeId }: Props) {
         Vibration.vibrate([0, 100, 50, 100]);
         Alert.alert(
           'Duplicado',
-          `El codigo "${pendingBarcode}" ya fue escaneado en esta ruta.`
+          `El codigo "${pendingBarcode}" ya fue escaneado.`
         );
       } else {
         setLastScanned(pendingBarcode);
