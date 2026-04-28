@@ -21,7 +21,12 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.inexorablegrod.logiscanmobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,6 +40,11 @@
           "cameraPermission": "Se necesita acceso a la camara para escanear codigos de barras."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "eb1c7cb1-6ce3-49c0-aea6-15094ae87ba3"
+      }
+    }
   }
 }

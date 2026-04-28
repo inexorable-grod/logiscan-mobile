@@ -5,9 +5,11 @@ import ScannerScreen from '../screens/ScannerScreen';
 import RoutesScreen from '../screens/RoutesScreen';
 import RequestsScreen from '../screens/RequestsScreen';
 import ScanHistoryScreen from '../screens/ScanHistoryScreen';
+import RouteClosingScreen from '../screens/RouteClosingScreen';
+import MachComparisonScreen from '../screens/MachComparisonScreen';
 import { logout as apiLogout } from '../services/api';
 
-type Tab = 'scanner' | 'routes' | 'requests' | 'history';
+type Tab = 'scanner' | 'routes' | 'requests' | 'history' | 'cierre';
 
 interface Props {
   user: User;
@@ -17,6 +19,7 @@ interface Props {
 export default function HomeNavigator({ user, onLogout }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('scanner');
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
+  const [closureId, setClosureId] = useState<string | null>(null);
 
   const handleLogout = () => {
     Alert.alert('Cerrar sesion', 'Esta seguro que desea salir?', [
@@ -90,6 +93,23 @@ export default function HomeNavigator({ user, onLogout }: Props) {
         return <RequestsScreen routeId={selectedRoute.id} />;
       case 'history':
         return <ScanHistoryScreen routeId={selectedRoute.id} />;
+      case 'cierre':
+        if (closureId) {
+          return (
+            <MachComparisonScreen
+              closureId={closureId}
+              routeNumber={selectedRoute.route_number}
+              onBack={() => setClosureId(null)}
+            />
+          );
+        }
+        return (
+          <RouteClosingScreen
+            routeId={selectedRoute.id}
+            routeNumber={selectedRoute.route_number}
+            onViewComparison={(id: string) => setClosureId(id)}
+          />
+        );
     }
   };
 
@@ -122,6 +142,7 @@ export default function HomeNavigator({ user, onLogout }: Props) {
           { key: 'routes' as Tab, label: 'Rutas' },
           { key: 'requests' as Tab, label: 'Solicitudes' },
           { key: 'history' as Tab, label: 'Historial' },
+          { key: 'cierre' as Tab, label: 'Cierre' },
         ]).map((tab) => (
           <TouchableOpacity
             key={tab.key}
