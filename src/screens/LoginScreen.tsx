@@ -21,6 +21,7 @@ export default function LoginScreen({ onLoginSuccess }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -62,15 +63,24 @@ export default function LoginScreen({ onLoginSuccess }: Props) {
           editable={!loading}
         />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Contrasena"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          editable={!loading}
-          onSubmitEditing={handleLogin}
-        />
+        <View style={styles.passwordContainer}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="Contrasena"
+            secureTextEntry={!showPassword}
+            value={password}
+            onChangeText={setPassword}
+            editable={!loading}
+            onSubmitEditing={handleLogin}
+          />
+          <TouchableOpacity
+            style={styles.eyeButton}
+            onPress={() => setShowPassword(!showPassword)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.eyeIcon}>{showPassword ? '◉' : '◎'}</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
@@ -127,6 +137,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 14,
     backgroundColor: '#f9fafb',
+  },
+  passwordContainer: {
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    marginBottom: 14,
+    backgroundColor: '#f9fafb',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  eyeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  eyeIcon: {
+    fontSize: 20,
+    color: '#6b7280',
   },
   button: {
     backgroundColor: '#1a56db',
