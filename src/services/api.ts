@@ -113,6 +113,29 @@ export async function getScanHistory(routeId?: string, page: number = 1): Promis
   return data;
 }
 
+/** Get scans grouped by order (parsed from barcode) */
+export async function getScansByOrder(routeId: string, date?: string): Promise<{
+  orders: Array<{
+    pedido_number: string;
+    scanned_count: number;
+    expected_count: number;
+    packages: string[];
+    missing: string[];
+    scan_types: string[];
+    is_complete: boolean;
+  }>;
+  total_orders: number;
+  total_scanned: number;
+  complete_orders: number;
+  missing_orders: number;
+  unmatched_scans: number;
+}> {
+  const params: Record<string, string> = { route_id: routeId };
+  if (date) params.date = date;
+  const { data } = await api.get('/scans/by-order', { params });
+  return data;
+}
+
 /** Create a new client request */
 export async function postRequest(
   requestType: string,

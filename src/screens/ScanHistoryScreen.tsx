@@ -8,8 +8,7 @@ import {
   SectionList,
   TouchableOpacity,
 } from 'react-native';
-import { getScanHistory } from '../services/api';
-import { getRouteOrders } from '../services/routeClosureApi';
+import { getScanHistory, getScansByOrder } from '../services/api';
 
 interface ScanItem {
   id: string;
@@ -19,17 +18,23 @@ interface ScanItem {
   client: { id: string; client_code: string; name: string } | null;
 }
 
-interface OrderWithScans {
-  id: string;
+interface OrderSummary {
   pedido_number: string;
-  client_name_ocr: string | null;
-  expected_cubetas: number;
-  expected_cajas_bolsa: number;
-  expected_refrigerado: number;
-  expected_controlado: number;
-  expected_total: number;
-  client?: { id: string; name: string; client_code: string } | null;
-  scanned: { cubetas: number; cajas_bolsa: number; refrigerado: number; controlado: number; total: number };
+  scanned_count: number;
+  expected_count: number;
+  packages: string[];
+  missing: string[];
+  scan_types: string[];
+  is_complete: boolean;
+}
+
+interface OrderResponse {
+  orders: OrderSummary[];
+  total_orders: number;
+  total_scanned: number;
+  complete_orders: number;
+  missing_orders: number;
+  unmatched_scans: number;
 }
 
 interface Section {
@@ -37,10 +42,10 @@ interface Section {
   data: ScanItem[];
 }
 
+// For SectionList, we use a dummy data item to render order rows
 interface OrderSection {
-  order: OrderWithScans;
   title: string;
-  data: ScanItem[];
+  data: OrderSummary[];
 }
 
 type ViewMode = 'date' | 'order';
@@ -60,7 +65,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function ScanHistoryScreen({ routeId }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('date');
   const [sections, setSections] = useState<Section[]>([]);
-  const [orderSections, setOrderSections] = useState<OrderSection[]>([]);
+  const [orderData, setOrderData] = useState<OrderResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -110,54 +115,8 @@ export default function ScanHistoryScreen({ routeId }: Props) {
     try {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
-      const [orders, historyResult] = await Promise.all([
-        getRouteOrders(routeId, today),
-        getScanHistory(routeId, 1),
-      ]);
-
-      const allScans: ScanItem[] = historyResult.data;
-
-      // Build order sections: group scans by client match
-      const result: OrderSection[] = orders.map((order: OrderWithScans) => {
-        const orderScans = allScans.filter(
-          (scan) => scan.client && order.client && scan.client.id === order.client.id
-        );
-        const clientName = order.client?.name ?? order.client_name_ocr ?? 'Sin cliente';
-        return {
-          order,
-          title: `Pedido ${order.pedido_number} — ${clientName}`,
-          data: orderScans,
-        };
-      });
-
-      // Add unmatched scans section
-      const matchedClientIds = new Set(
-        orders
-          .filter((o: OrderWithScans) => o.client)
-          .map((o: OrderWithScans) => o.client!.id)
-      );
-      const unmatchedScans = allScans.filter(
-        (scan) => !scan.client || !matchedClientIds.has(scan.client.id)
-      );
-      if (unmatchedScans.length > 0) {
-        result.push({
-          order: {
-            id: '__unmatched__',
-            pedido_number: '',
-            client_name_ocr: null,
-            expected_cubetas: 0,
-            expected_cajas_bolsa: 0,
-            expected_refrigerado: 0,
-            expected_controlado: 0,
-            expected_total: 0,
-            scanned: { cubetas: 0, cajas_bolsa: 0, refrigerado: 0, controlado: 0, total: 0 },
-          },
-          title: `Sin pedido asignado (${unmatchedScans.length})`,
-          data: unmatchedScans,
-        });
-      }
-
-      setOrderSections(result);
+      const result = await getScansByOrder(routeId, today);
+      setOrderData(result);
     } catch {
       // Silently fail
     } finally {
@@ -210,71 +169,96 @@ export default function ScanHistoryScreen({ routeId }: Props) {
     );
   }
 
-  const activeSections = viewMode === 'date' ? sections : orderSections;
+  const renderOrderCard = (order: OrderSummary) => {
+    const statusColor = order.is_complete ? '#dcfce7' : '#fef3c7';
+    const statusTextColor = order.is_complete ? '#166534' : '#92400e';
+    const statusLabel = order.is_complete ? 'Completo' : 'Incompleto';
+    const hasMissing = order.missing.length > 0;
 
-  const renderOrderSectionHeader = (section: OrderSection) => {
-    const { order } = section;
-    if (order.id === '__unmatched__') {
-      return (
-        <View style={styles.orderSectionHeader}>
-          <Text style={styles.orderSectionTitle}>{section.title}</Text>
-        </View>
-      );
-    }
-    const scannedTotal = order.scanned.total;
-    const expectedTotal = order.expected_total;
-    const isComplete = scannedTotal >= expectedTotal && expectedTotal > 0;
-    const isPending = scannedTotal === 0 && expectedTotal > 0;
     return (
-      <View style={styles.orderSectionHeader}>
-        <View style={styles.orderSectionTop}>
-          <Text style={styles.orderSectionTitle}>{section.title}</Text>
-          <View
-            style={[
-              styles.orderStatusBadge,
-              {
-                backgroundColor: isComplete ? '#dcfce7' : isPending ? '#fee2e2' : '#fef3c7',
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.orderStatusText,
-                {
-                  color: isComplete ? '#166534' : isPending ? '#991b1b' : '#92400e',
-                },
-              ]}
-            >
-              {isComplete ? 'Completo' : isPending ? 'Pendiente' : 'Incompleto'}
+      <View key={order.pedido_number} style={styles.orderCard}>
+        <View style={styles.orderCardHeader}>
+          <Text style={styles.orderPedido}>Pedido {order.pedido_number}</Text>
+          <View style={[styles.orderStatusBadge, { backgroundColor: statusColor }]}>
+            <Text style={[styles.orderStatusText, { color: statusTextColor }]}>
+              {statusLabel}
             </Text>
           </View>
         </View>
+
         <View style={styles.orderCountsRow}>
-          <Text style={styles.orderCountText}>
-            Total: {scannedTotal}/{expectedTotal}
+          <Text style={styles.orderCountLabel}>Escaneados:</Text>
+          <Text style={styles.orderCountValue}>
+            {order.scanned_count}/{order.expected_count}
           </Text>
-          {order.expected_cubetas > 0 && (
-            <Text style={styles.orderCountText}>
-              Cub: {order.scanned.cubetas}/{order.expected_cubetas}
+        </View>
+
+        <View style={styles.orderPackagesRow}>
+          <Text style={styles.orderCountLabel}>Paquetes:</Text>
+          <Text style={styles.orderPackagesList}>
+            {order.packages.join(', ')}
+          </Text>
+        </View>
+
+        {hasMissing && (
+          <View style={styles.orderMissingRow}>
+            <Text style={styles.missingLabel}>Faltantes:</Text>
+            <Text style={styles.missingList}>
+              {order.missing.join(', ')}
             </Text>
-          )}
-          {order.expected_cajas_bolsa > 0 && (
-            <Text style={styles.orderCountText}>
-              Caj: {order.scanned.cajas_bolsa}/{order.expected_cajas_bolsa}
-            </Text>
-          )}
-          {order.expected_refrigerado > 0 && (
-            <Text style={styles.orderCountText}>
-              Ref: {order.scanned.refrigerado}/{order.expected_refrigerado}
-            </Text>
-          )}
-          {order.expected_controlado > 0 && (
-            <Text style={styles.orderCountText}>
-              Ctrl: {order.scanned.controlado}/{order.expected_controlado}
-            </Text>
-          )}
+          </View>
+        )}
+
+        <View style={styles.orderTypesRow}>
+          {order.scan_types.map((t: string) => (
+            <View key={t} style={[styles.typeBadge, { backgroundColor: typeColor(t) }]}>
+              <Text style={styles.typeBadgeText}>{TYPE_LABELS[t] ?? t}</Text>
+            </View>
+          ))}
         </View>
       </View>
+    );
+  };
+
+  const renderOrderView = () => {
+    if (!orderData || orderData.orders.length === 0) {
+      return (
+        <View style={styles.centered}>
+          <Text style={styles.emptyText}>No hay pedidos para esta ruta.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <SectionList
+        sections={[{ title: 'summary', data: orderData.orders }]}
+        keyExtractor={(item: OrderSummary) => item.pedido_number}
+        renderSectionHeader={() => (
+          <View style={styles.orderSummaryBar}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNumber}>{orderData.total_orders}</Text>
+              <Text style={styles.summaryLabel}>Pedidos</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryNumber}>{orderData.total_scanned}</Text>
+              <Text style={styles.summaryLabel}>Escaneos</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryNumber, { color: '#166534' }]}>{orderData.complete_orders}</Text>
+              <Text style={styles.summaryLabel}>Completos</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryNumber, { color: '#92400e' }]}>{orderData.missing_orders}</Text>
+              <Text style={styles.summaryLabel}>Faltantes</Text>
+            </View>
+          </View>
+        )}
+        renderItem={({ item }: { item: OrderSummary }) => renderOrderCard(item)}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        stickySectionHeadersEnabled
+      />
     );
   };
 
@@ -302,55 +286,49 @@ export default function ScanHistoryScreen({ routeId }: Props) {
         </View>
       </View>
 
-      <SectionList
-        sections={activeSections}
-        keyExtractor={(item: ScanItem) => item.id}
-        renderSectionHeader={({ section }) =>
-          viewMode === 'order' ? (
-            renderOrderSectionHeader(section as OrderSection)
-          ) : (
+      {viewMode === 'order' ? renderOrderView() : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(item: ScanItem) => item.id}
+          renderSectionHeader={({ section }) => (
             <Text style={styles.sectionHeader}>{section.title}</Text>
-          )
-        }
-        renderItem={({ item }: { item: ScanItem }) => (
-          <View style={styles.card}>
-            <View style={styles.cardRow}>
-              <Text style={styles.barcode}>{item.barcode}</Text>
-              <View style={[styles.typeBadge, { backgroundColor: typeColor(item.scan_type) }]}>
-                <Text style={styles.typeBadgeText}>
-                  {TYPE_LABELS[item.scan_type] ?? item.scan_type}
-                </Text>
+          )}
+          renderItem={({ item }: { item: ScanItem }) => (
+            <View style={styles.card}>
+              <View style={styles.cardRow}>
+                <Text style={styles.barcode}>{item.barcode}</Text>
+                <View style={[styles.typeBadge, { backgroundColor: typeColor(item.scan_type) }]}>
+                  <Text style={styles.typeBadgeText}>
+                    {TYPE_LABELS[item.scan_type] ?? item.scan_type}
+                  </Text>
+                </View>
               </View>
-            </View>
-            {item.client && (
-              <Text style={styles.clientText}>
-                {item.client.client_code} — {item.client.name}
+              {item.client && (
+                <Text style={styles.clientText}>
+                  {item.client.client_code} — {item.client.name}
+                </Text>
+              )}
+              <Text style={styles.timeText}>
+                {new Date(item.scanned_at).toLocaleTimeString('es', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
               </Text>
-            )}
-            <Text style={styles.timeText}>
-              {new Date(item.scanned_at).toLocaleTimeString('es', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
-          </View>
-        )}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.3}
-        ListEmptyComponent={
-          <View style={styles.centered}>
-            <Text style={styles.emptyText}>
-              {viewMode === 'order'
-                ? 'No hay pedidos para esta ruta.'
-                : 'No hay escaneos registrados.'}
-            </Text>
-          </View>
-        }
-        stickySectionHeadersEnabled
-      />
+            </View>
+          )}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          }
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListEmptyComponent={
+            <View style={styles.centered}>
+              <Text style={styles.emptyText}>No hay escaneos registrados.</Text>
+            </View>
+          }
+          stickySectionHeadersEnabled
+        />
+      )}
     </View>
   );
 }
@@ -424,30 +402,56 @@ const styles = StyleSheet.create({
     color: '#1a56db',
   },
 
-  // Order section headers
-  orderSectionHeader: {
-    backgroundColor: '#f0f4f8',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+  // Order summary bar
+  orderSummaryBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 10,
+    padding: 12,
+    elevation: 1,
   },
-  orderSectionTop: {
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+
+  // Order cards
+  orderCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginVertical: 4,
+    borderRadius: 10,
+    padding: 14,
+    elevation: 1,
+  },
+  orderCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  orderSectionTitle: {
-    fontSize: 13,
+  orderPedido: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#111827',
-    flex: 1,
+    fontVariant: ['tabular-nums'],
   },
   orderStatusBadge: {
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    marginLeft: 8,
   },
   orderStatusText: {
     fontSize: 11,
@@ -455,13 +459,56 @@ const styles = StyleSheet.create({
   },
   orderCountsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-    gap: 10,
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  orderCountText: {
-    fontSize: 12,
+  orderCountLabel: {
+    fontSize: 13,
     color: '#6b7280',
-    fontWeight: '500',
+    width: 90,
+  },
+  orderCountValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+    fontVariant: ['tabular-nums'],
+  },
+  orderPackagesRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  orderPackagesList: {
+    fontSize: 13,
+    color: '#374151',
+    flex: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  orderMissingRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    backgroundColor: '#fef2f2',
+    borderRadius: 6,
+    padding: 6,
+    marginTop: 2,
+  },
+  missingLabel: {
+    fontSize: 13,
+    color: '#991b1b',
+    fontWeight: '600',
+    width: 90,
+  },
+  missingList: {
+    fontSize: 13,
+    color: '#991b1b',
+    fontWeight: '600',
+    flex: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  orderTypesRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
   },
 });
