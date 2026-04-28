@@ -78,7 +78,7 @@ export default function LoginScreen({ onLoginSuccess }: Props) {
             onPress={() => setShowPassword(!showPassword)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.eyeIcon}>{showPassword ? '◉' : '◎'}</Text>
+            <Text style={styles.eyeIcon}>{showPassword ? '👁' : '👁‍🗨'}</Text>
           </TouchableOpacity>
         </View>
 
